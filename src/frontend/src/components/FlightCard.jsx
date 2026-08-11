@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 
 export default function FlightCard({ flight, onCheckPrice, onRebook, onDelete, onToggleAutoRebook }) {
   const [checking, setChecking] = useState(false);
-  const [rebooking, setRebooking] = useState(false);
 
   const isMiles = flight.payment_type === 'MILES';
   const pricePaid = flight.price_paid || 0;
@@ -25,13 +24,10 @@ export default function FlightCard({ flight, onCheckPrice, onRebook, onDelete, o
     }
   };
 
-  const handleRebook = async () => {
-    setRebooking(true);
-    try {
-      await onRebook(flight.id);
-    } finally {
-      setRebooking(false);
-    }
+  const handleRebook = () => {
+    // Open Delta's official Find My Trip portal pre-populated in a new tab
+    const deltaUrl = `https://www.delta.com/mytrips/findTrip?confirmationNumber=${encodeURIComponent(flight.confirmation_code)}&lastName=${encodeURIComponent(flight.passenger_last_name)}`;
+    window.open(deltaUrl, '_blank');
   };
 
   return (
@@ -88,7 +84,7 @@ export default function FlightCard({ flight, onCheckPrice, onRebook, onDelete, o
           </div>
         </div>
 
-        <div className="pricing-block">
+        <div className="pricing-row">
           <div>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: '#666', textTransform: 'uppercase' }}>
               {isMiles ? 'Paid' : 'Price Paid'}
@@ -138,8 +134,8 @@ export default function FlightCard({ flight, onCheckPrice, onRebook, onDelete, o
             {checking ? 'Checking...' : '🔄 Check'}
           </button>
 
-          <button className={`btn btn-sm ${hasDrop ? 'btn-success' : 'btn-primary'}`} onClick={handleRebook} disabled={rebooking}>
-            ⚡ {rebooking ? 'Opening...' : (hasDrop ? 'Rebook & Save' : 'Test Rebook')}
+          <button className={`btn btn-sm ${hasDrop ? 'btn-success' : 'btn-primary'}`} onClick={handleRebook}>
+            ⚡ {hasDrop ? 'Rebook on Delta.com' : 'Open Delta Portal'}
           </button>
         </div>
       </div>
