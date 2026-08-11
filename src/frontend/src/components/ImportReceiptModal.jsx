@@ -1,29 +1,32 @@
 import React, { useState } from 'react';
 
-export default function ImportReceiptModal({ isOpen, onClose, onImportSuccess }) {
+export default function ImportReceiptModal({ onClose, onReceiptImported, onImportSuccess }) {
   const [receiptText, setReceiptText] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-
-  if (!isOpen) return null;
 
   const handleImport = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
+      const token = localStorage.getItem('token') || 'demo-token';
       const res = await fetch('/api/receipts/import', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
         body: JSON.stringify({ receiptText })
       });
       const data = await res.json();
       if (!data.success) {
         throw new Error(data.error || 'Failed to parse Delta receipt email.');
       }
-      alert(`🎉 Successfully imported Delta PNR: ${data.flight.confirmation_code} (${data.flight.origin} ➔ ${data.flight.destination})!`);
+      
       setReceiptText('');
-      onImportSuccess();
+      const cb = onReceiptImported || onImportSuccess;
+      if (cb) cb();
       onClose();
     } catch (err) {
       setError(err.message);
@@ -55,7 +58,7 @@ export default function ImportReceiptModal({ isOpen, onClose, onImportSuccess })
             <textarea
               className="form-input"
               rows={8}
-              placeholder="Paste raw email text here... (e.g. Confirmation Code: H7X9KL, Passenger: John Smith, DL 1452 JFK to LAX, Total: 35,000 SkyMiles)"
+              placeholder="Paste raw email text here... (e.g. Confirmation Code: HZRE7W, Passenger: HENRY ASSAF, DL 2479 ATL to PWM, Total: 54,900 SkyMiles)"
               value={receiptText}
               onChange={e => setReceiptText(e.target.value)}
               required
