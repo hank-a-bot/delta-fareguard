@@ -4,7 +4,7 @@ services:
     env: node
     plan: free
     region: oregon
-    buildCommand: npm install && cd src/frontend && npm install && npm run build
+    buildCommand: npm install && npx playwright install chromium && cd src/frontend && npm install && npm run build
     startCommand: node src/backend/server.js
     envVars:
       - key: NODE_VERSION
