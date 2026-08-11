@@ -1,16 +1,14 @@
 services:
   - type: web
     name: delta-fareguard
-    env: docker
+    env: node
     plan: free
     region: oregon
-    dockerfilePath: ./Dockerfile
-    healthCheckPath: /
+    buildCommand: npm install && cd src/frontend && npm install && npm run build
+    startCommand: node src/backend/server.js
     envVars:
-      - key: PORT
-        value: 3001
-      - key: NODE_ENV
-        value: production
+      - key: NODE_VERSION
+        value: 18.18.0
       - key: ENCRYPTION_SECRET
         generateValue: true
       - key: JWT_SECRET
