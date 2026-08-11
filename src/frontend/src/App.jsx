@@ -98,6 +98,22 @@ export default function App() {
     }
   };
 
+  const handleUpdateFareClass = async (id, newFareClass) => {
+    try {
+      await fetch(`/api/flights/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ fare_class: newFareClass })
+      });
+      fetchFlights();
+    } catch (err) {
+      console.error('Fare class update error:', err);
+    }
+  };
+
   // Calculations
   const totalCashSavings = flights.reduce((sum, f) => {
     if (f.payment_type !== 'MILES' && f.current_lowest_price && f.current_lowest_price < f.price_paid) {
@@ -205,6 +221,7 @@ export default function App() {
                 onCheckPrice={handleCheckPrice}
                 onDelete={handleDeleteFlight}
                 onToggleAutoRebook={handleToggleAutoRebook}
+                onUpdateFareClass={handleUpdateFareClass}
               />
             ))}
           </div>

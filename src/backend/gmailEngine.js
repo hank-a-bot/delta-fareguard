@@ -79,7 +79,17 @@ function parseDeltaReceiptText(emailText) {
     }
   }
 
-  // 5. Extract Payment Breakdown (SkyMiles vs Cash + Take Off 15%)
+  // 5. Purchased Fare Class Logic (Medallion Upgrades Protection)
+  // Medallion members book Main Cabin and get upgraded seats (Comfort+ / First).
+  // The underlying purchased ticket class is Main Cabin unless explicitly First Class paid.
+  let fare_class = 'Main Cabin';
+  if (/First\s*Class/i.test(cleanText) && !/Main/i.test(cleanText)) {
+    fare_class = 'First Class';
+  } else if (/Delta\s*One/i.test(cleanText)) {
+    fare_class = 'Delta One';
+  }
+
+  // 6. Extract Payment Breakdown (SkyMiles vs Cash + Take Off 15%)
   let payment_type = 'MILES';
   let miles_paid = 54900;
   let price_paid = 0;
@@ -105,7 +115,7 @@ function parseDeltaReceiptText(emailText) {
     origin,
     destination,
     departure_date,
-    fare_class: 'Delta Comfort',
+    fare_class,
     payment_type,
     price_paid,
     miles_paid,

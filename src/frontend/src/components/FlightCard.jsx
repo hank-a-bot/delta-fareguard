@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 
-export default function FlightCard({ flight, onCheckPrice, onRebook, onDelete, onToggleAutoRebook }) {
+export default function FlightCard({ flight, onCheckPrice, onDelete, onToggleAutoRebook, onUpdateFareClass }) {
   const [checking, setChecking] = useState(false);
+  const [editingFare, setEditingFare] = useState(false);
+  const [fareClass, setFareClass] = useState(flight.fare_class || 'Main Cabin');
 
   const isMiles = flight.payment_type === 'MILES';
   const pricePaid = flight.price_paid || 0;
@@ -25,9 +27,16 @@ export default function FlightCard({ flight, onCheckPrice, onRebook, onDelete, o
   };
 
   const handleRebook = () => {
-    // Open Delta's official Find My Trip portal pre-populated in a new tab
     const deltaUrl = `https://www.delta.com/mytrips/findTrip?confirmationNumber=${encodeURIComponent(flight.confirmation_code)}&lastName=${encodeURIComponent(flight.passenger_last_name)}`;
     window.open(deltaUrl, '_blank');
+  };
+
+  const saveFareClassChange = async (newClass) => {
+    setFareClass(newClass);
+    setEditingFare(false);
+    if (onUpdateFareClass) {
+      await onUpdateFareClass(flight.id, newClass);
+    }
   };
 
   return (
@@ -35,7 +44,7 @@ export default function FlightCard({ flight, onCheckPrice, onRebook, onDelete, o
       <div className="flight-row-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
           <span className="pnr-tag">PNR: {flight.confirmation_code}</span>
-          <span style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+          <span style={{ fontSize: '0.85rem', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
             {flight.passenger_last_name}
           </span>
           <span
@@ -74,10 +83,32 @@ export default function FlightCard({ flight, onCheckPrice, onRebook, onDelete, o
             </span>
           </div>
 
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: '#555' }}>
-            📅 {flight.departure_date} &bull; Class: {flight.fare_class}
-            {isMiles && flight.has_takeoff_15 === 1 && (
-              <span style={{ marginLeft: '0.5rem', color: '#1d4ed8', fontWeight: 700 }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: '#555', display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.2rem' }}>
+            <span>📅 {flight.departure_date} &bull; Class:</span>
+            
+            {editingFare ? (
+              <select
+                value={fareClass}
+                onChange={(e) => saveFareClassChange(e.target.value)}
+                style={{ padding: '0.1rem 0.3rem', fontSize: '0.75rem', fontFamily: 'var(--font-mono)', border: '1px solid #1a1a1a' }}
+              >
+                <option value="Main Cabin">Main Cabin (Standard Purchased)</option>
+                <option value="Delta Comfort">Delta Comfort+</option>
+                <option value="First Class">First Class</option>
+                <option value="Basic Economy">Basic Economy</option>
+              </select>
+            ) : (
+              <span
+                onClick={() => setEditingFare(true)}
+                title="Click to edit purchased fare class"
+                style={{ fontWeight: 700, textDecoration: 'underline', cursor: 'pointer', color: '#1a1a1a' }}
+              >
+                {fareClass} ✏️
+              </span>
+            )}
+
+            {isMiles && (
+              <span style={{ marginLeft: '0.3rem', color: '#1d4ed8', fontWeight: 700 }}>
                 [💳 Take Off 15% Active]
               </span>
             )}
