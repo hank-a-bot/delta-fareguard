@@ -26,11 +26,6 @@ export default function FlightCard({ flight, onCheckPrice, onDelete, onToggleAut
     }
   };
 
-  const handleRebook = () => {
-    const deltaUrl = `https://www.delta.com/mytrips/findTrip?confirmationNumber=${encodeURIComponent(flight.confirmation_code)}&lastName=${encodeURIComponent(flight.passenger_last_name)}`;
-    window.open(deltaUrl, '_blank');
-  };
-
   const saveFareClassChange = async (newClass) => {
     setFareClass(newClass);
     setEditingFare(false);
@@ -38,6 +33,8 @@ export default function FlightCard({ flight, onCheckPrice, onDelete, onToggleAut
       await onUpdateFareClass(flight.id, newClass);
     }
   };
+
+  const deltaPortalUrl = `https://www.delta.com/mytrips/findTrip?confirmationNumber=${encodeURIComponent(flight.confirmation_code)}&lastName=${encodeURIComponent(flight.passenger_last_name)}`;
 
   return (
     <div className="flight-card">
@@ -165,9 +162,15 @@ export default function FlightCard({ flight, onCheckPrice, onDelete, onToggleAut
             {checking ? 'Checking...' : '🔄 Check'}
           </button>
 
-          <button className={`btn btn-sm ${hasDrop ? 'btn-success' : 'btn-primary'}`} onClick={handleRebook}>
+          <a
+            href={deltaPortalUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`btn btn-sm ${hasDrop ? 'btn-success' : 'btn-primary'}`}
+            style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+          >
             ⚡ {hasDrop ? 'Rebook on Delta.com' : 'Open Delta Portal'}
-          </button>
+          </a>
         </div>
       </div>
     </div>
