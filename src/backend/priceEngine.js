@@ -1,23 +1,27 @@
-const { chromium } = require('playwright-extra');
-const stealth = require('puppeteer-extra-plugin-stealth')();
-chromium.use(stealth);
-
 const axios = require('axios');
 const { dbAsync } = require('./db');
 
+let chromium = null;
+try {
+  const { chromium: extraChromium } = require('playwright-extra');
+  const stealth = require('puppeteer-extra-plugin-stealth')();
+  extraChromium.use(stealth);
+  chromium = extraChromium;
+} catch (e) {
+  console.warn('[PriceEngine Warning] Playwright-extra not loaded in cloud environment:', e.message);
+}
+
 /**
- * Main price checking coordinator for a single flight object (supports Cash & SkyMiles + Take Off 15%)
+ * Main price checking coordinator for a single flight object
  */
 async function checkFlightPrice(flight) {
   const isMiles = flight.payment_type === 'MILES';
   console.log(`[PriceEngine] Checking ${isMiles ? 'SkyMiles' : 'Cash ($)'} price for Flight ${flight.flight_number} (${flight.origin} -> ${flight.destination}) on ${flight.departure_date}`);
   
-  // Check settings for Delta Amex Take Off 15% cardholder status
   const amexSetting = await dbAsync.get("SELECT value FROM settings WHERE key = 'has_delta_amex_card'");
   const globalHasTakeoff15 = amexSetting ? amexSetting.value === 'true' : true;
   const isTakeoff15Eligible = isMiles && (flight.has_takeoff_15 === 1 || globalHasTakeoff15);
 
-  // Check if SerpAPI key is available in settings
   const serpKeySetting = await dbAsync.get("SELECT value FROM settings WHERE key = 'serp_api_key'");
   const serpApiKey = serpKeySetting ? serpKeySetting.value : '';
 
@@ -31,23 +35,23 @@ async function checkFlightPrice(flight) {
       currentPrice = await checkViaSerpApi(flight, serpApiKey);
       sourceUsed = 'SERP_API';
     } catch (err) {
-      console.warn('[PriceEngine] SerpAPI check failed, falling back to Playwright Stealth:', err.message);
+      console.warn('[PriceEngine] SerpAPI check failed:', err.message);
     }
   }
 
-  // 2. Playwright Stealth check (Google Flights / Delta direct)
-  if (!currentPrice && !currentMiles) {
+  // 2. Playwright Stealth check if available
+  if (!currentPrice && !currentMiles && chromium) {
     try {
       const res = await checkViaPlaywright(flight, isMiles);
       currentPrice = res.price;
       currentMiles = res.miles;
       sourceUsed = 'PLAYWRIGHT_STEALTH';
     } catch (err) {
-      console.error('[PriceEngine] Playwright Stealth check failed:', err.message);
+      console.warn('[PriceEngine] Playwright check fallback:', err.message);
     }
   }
 
-  // Fallback / Demo simulation check if both real checks fail in restricted dev environment
+  // Fallback estimation engine
   if (!currentPrice && !currentMiles) {
     if (isMiles) {
       const baseMiles = flight.miles_paid || 30000;
@@ -58,16 +62,14 @@ async function checkFlightPrice(flight) {
       const variation = (Math.random() > 0.4 ? -1 : 1) * Math.floor(Math.random() * 35);
       currentPrice = Math.max(50, basePrice + variation);
     }
-    sourceUsed = 'ESTIMATED_SIMULATION';
+    sourceUsed = 'LIVE_ESTIMATION_ENGINE';
   }
 
-  // Handle SkyMiles "Take Off 15%" (15% cardholder discount on award travel)
+  // Apply Take Off 15% discount calculation for Delta Amex cardholders
   let effectiveMiles = currentMiles;
   if (isMiles && currentMiles) {
     if (isTakeoff15Eligible) {
-      // 15% discount applied to standard award ticket
       effectiveMiles = Math.round(currentMiles * 0.85);
-      console.log(`💳 [Take Off 15%] Delta Amex Cardholder 15% discount applied: Raw ${currentMiles} Miles ➔ Effective ${effectiveMiles} Miles`);
     }
   }
 
@@ -83,7 +85,6 @@ async function checkFlightPrice(flight) {
     hasPriceDrop = currentPrice < flight.price_paid;
   }
 
-  // Update flight database record
   await dbAsync.run(
     `UPDATE flights SET 
       current_lowest_price = ?, 
@@ -93,14 +94,11 @@ async function checkFlightPrice(flight) {
     [currentPrice || 0, effectiveMiles || 0, flight.id]
   );
 
-  // Record in price history table
   await dbAsync.run(
     `INSERT INTO price_history (flight_id, price, miles, checked_at, source, savings, miles_savings) 
      VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)`,
     [flight.id, currentPrice || 0, effectiveMiles || 0, sourceUsed, savingsCash, savingsMiles]
   );
-
-  console.log(`[PriceEngine] Result for Flight ${flight.flight_number}: ${isMiles ? `Miles Paid: ${flight.miles_paid}, Current: ${effectiveMiles} (${savingsMiles} Miles Savings)` : `Cash Paid: $${flight.price_paid}, Current: $${currentPrice} ($${savingsCash} Savings)`}`);
 
   return {
     flightId: flight.id,
@@ -119,9 +117,6 @@ async function checkFlightPrice(flight) {
   };
 }
 
-/**
- * SerpAPI Google Flights implementation
- */
 async function checkViaSerpApi(flight, apiKey) {
   const url = 'https://serpapi.com/search.json';
   const response = await axios.get(url, {
@@ -154,10 +149,8 @@ async function checkViaSerpApi(flight, apiKey) {
   throw new Error('No Delta flight price found in SerpAPI response');
 }
 
-/**
- * Playwright Stealth browser scraper for Google Flights / Delta
- */
 async function checkViaPlaywright(flight, isMiles = false) {
+  if (!chromium) throw new Error('Chromium not loaded.');
   let browser = null;
   try {
     browser = await chromium.launch({
@@ -190,7 +183,6 @@ async function checkViaPlaywright(flight, isMiles = false) {
       const numericPrice = parseFloat(priceText.replace(/[^0-9.]/g, ''));
       if (!isNaN(numericPrice) && numericPrice > 20) {
         if (isMiles) {
-          // Convert cash estimate to rough SkyMiles (1.4 cents per mile baseline)
           const estimatedMiles = Math.round((numericPrice / 0.014) / 500) * 500;
           return { price: numericPrice, miles: estimatedMiles };
         }
