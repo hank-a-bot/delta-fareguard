@@ -1,41 +1,20 @@
-FROM node:18-slim
-
-# Install dependencies required for Playwright Chromium
-RUN apt-get update && apt-get install -y \
-    wget \
-    gnupg \
-    ca-certificates \
-    procps \
-    libsqlite3-dev \
-    libnss3 \
-    libnspr4 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxrandr2 \
-    libgbm1 \
-    libasound2 \
-    && rm -rf /var/lib/apt/lists/*
+FROM mcr.microsoft.com/playwright:v1.40.0-jammy
 
 WORKDIR /app
 
-# Copy package files
+# Copy root package files and install dependencies
 COPY package*.json ./
-RUN npm install
-
-# Install Playwright
-RUN npx playwright install chromium
+RUN npm ci || npm install
 
 # Copy application source
 COPY . .
 
-# Build frontend
-RUN cd src/frontend && npm install && npm run build
+# Install frontend dependencies and build production static bundle
+RUN cd src/frontend && npm ci || npm install && npm run build
 
 EXPOSE 3001
+
+ENV PORT=3001
+ENV NODE_ENV=production
 
 CMD ["npm", "start"]
