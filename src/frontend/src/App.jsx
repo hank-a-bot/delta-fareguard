@@ -1,275 +1,244 @@
 import React, { useState, useEffect } from 'react';
 import FlightCard from './components/FlightCard';
 import AddFlightModal from './components/AddFlightModal';
+import ImportReceiptModal from './components/ImportReceiptModal';
 import SettingsModal from './components/SettingsModal';
 import RebookLogsModal from './components/RebookLogsModal';
-import ImportReceiptModal from './components/ImportReceiptModal';
-
-const API_BASE = '/api';
 
 export default function App() {
   const [flights, setFlights] = useState([]);
-  const [settings, setSettings] = useState({});
-  const [rebookLogs, setRebookLogs] = useState([]);
-  const [burnerEmail, setBurnerEmail] = useState('');
   const [loading, setLoading] = useState(true);
   const [checkingAll, setCheckingAll] = useState(false);
 
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showLogsModal, setShowLogsModal] = useState(false);
 
-  const fetchData = async () => {
+  const token = localStorage.getItem('token') || 'demo-token';
+
+  useEffect(() => {
+    fetchFlights();
+  }, []);
+
+  const fetchFlights = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const [flightsRes, settingsRes, logsRes, burnerRes] = await Promise.all([
-        fetch(`${API_BASE}/flights`).then(r => r.json()),
-        fetch(`${API_BASE}/settings`).then(r => r.json()),
-        fetch(`${API_BASE}/rebook-logs`).then(r => r.json()),
-        fetch(`${API_BASE}/burner-email`).then(r => r.json())
-      ]);
-
-      if (flightsRes.success) setFlights(flightsRes.flights || []);
-      if (settingsRes.success) setSettings(settingsRes.settings || {});
-      if (logsRes.success) setRebookLogs(logsRes.logs || []);
-      if (burnerRes.success) setBurnerEmail(burnerRes.email || '');
+      const res = await fetch('/api/flights', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setFlights(data.flights);
+      }
     } catch (err) {
-      console.error('Error loading data:', err);
+      console.error('Failed to fetch flights:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const handleAddFlight = async (flightData) => {
-    const res = await fetch(`${API_BASE}/flights`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(flightData)
-    });
-    const data = await res.json();
-    if (!data.success) throw new Error(data.error);
-    fetchData();
-  };
-
-  const handleCheckPrice = async (flightId) => {
-    const res = await fetch(`${API_BASE}/flights/${flightId}/check`, { method: 'POST' });
-    const data = await res.json();
-    if (data.success) {
-      fetchData();
-    } else {
-      alert('Error checking price: ' + data.error);
+  const handleCheckPrice = async (id) => {
+    try {
+      const res = await fetch(`/api/flights/${id}/check`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetchFlights();
+      }
+    } catch (err) {
+      alert(`Price check failed: ${err.message}`);
     }
-  };
-
-  const handleRebook = async (flightId) => {
-    alert('Opening Delta Guided Auto-Rebook session in Playwright browser...');
-    const res = await fetch(`${API_BASE}/flights/${flightId}/rebook`, { method: 'POST' });
-    const data = await res.json();
-    if (data.success) {
-      fetchData();
-    } else {
-      alert('Rebooking error: ' + data.error);
-    }
-  };
-
-  const handleDeleteFlight = async (flightId) => {
-    if (!confirm('Are you sure you want to remove this flight from tracking?')) return;
-    await fetch(`${API_BASE}/flights/${flightId}`, { method: 'DELETE' });
-    fetchData();
-  };
-
-  const handleToggleAutoRebook = async (flightId, autoRebook) => {
-    await fetch(`${API_BASE}/flights/${flightId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ auto_rebook: autoRebook })
-    });
-    fetchData();
   };
 
   const handleCheckAll = async () => {
     setCheckingAll(true);
     try {
-      await fetch(`${API_BASE}/check-all`, { method: 'POST' });
-      alert('Instant price check initiated for all active Delta flights!');
-      setTimeout(fetchData, 3000);
-    } finally {
+      await fetch('/api/check-all', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setTimeout(() => {
+        fetchFlights();
+        setCheckingAll(false);
+      }, 2000);
+    } catch (err) {
       setCheckingAll(false);
     }
   };
 
-  const handleSaveSettings = async (newSettings) => {
-    await fetch(`${API_BASE}/settings`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newSettings)
-    });
-    fetchData();
+  const handleDeleteFlight = async (id) => {
+    if (!window.confirm('Are you sure you want to stop tracking this flight?')) return;
+    try {
+      await fetch(`/api/flights/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setFlights(flights.filter(f => f.id !== id));
+    } catch (err) {
+      alert(`Delete failed: ${err.message}`);
+    }
   };
 
-  // Savings Metrics Calculation
-  const totalCashSavings = flights.reduce((acc, f) => {
-    if (f.payment_type === 'MILES') return acc;
-    const curr = f.current_lowest_price || f.price_paid;
-    return acc + Math.max(0, f.price_paid - curr);
+  const handleToggleAutoRebook = async (id, currentVal) => {
+    try {
+      await fetch(`/api/flights/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ auto_rebook: currentVal ? 1 : 0 })
+      });
+      fetchFlights();
+    } catch (err) {
+      console.error('Toggle error:', err);
+    }
+  };
+
+  // Calculations
+  const totalCashSavings = flights.reduce((sum, f) => {
+    if (f.payment_type !== 'MILES' && f.current_lowest_price && f.current_lowest_price < f.price_paid) {
+      return sum + (f.price_paid - f.current_lowest_price);
+    }
+    return sum;
   }, 0);
 
-  const totalMilesSavings = flights.reduce((acc, f) => {
-    if (f.payment_type !== 'MILES') return acc;
-    const curr = f.current_lowest_miles || f.miles_paid;
-    return acc + Math.max(0, f.miles_paid - curr);
+  const totalMilesSavings = flights.reduce((sum, f) => {
+    if (f.payment_type === 'MILES' && f.current_lowest_miles && f.current_lowest_miles < f.miles_paid) {
+      return sum + (f.miles_paid - f.current_lowest_miles);
+    }
+    return sum;
   }, 0);
-
-  const activeTrackingCount = flights.filter(f => f.status === 'TRACKING').length;
 
   return (
-    <div className="app-container">
+    <div className="container">
       {/* Header */}
-      <header className="app-header">
+      <header style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <div className="brand-title">
-            <span>✈️ DELTA FAREGUARD</span>
-            <span className="brand-badge">v1.0</span>
-          </div>
-          <div className="brand-subtitle">
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+            ✈️ DELTA FAREGUARD <span className="version-badge">v1.0</span>
+          </h1>
+          <p style={{ margin: '0.2rem 0 0 0', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: '#555' }}>
             Daily 9:00 AM Delta Fare Tracker & Auto-Rebook Engine
-          </div>
+          </p>
         </div>
 
-        <div className="header-actions">
-          <button className="btn" onClick={() => setIsImportModalOpen(true)}>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <button className="btn btn-secondary" onClick={() => setShowReceiptModal(true)}>
             ✉️ Paste Receipt
           </button>
-          <button className="btn" onClick={handleCheckAll} disabled={checkingAll}>
-            🔄 {checkingAll ? 'Checking...' : 'Check All Prices'}
+          <button className="btn btn-secondary" onClick={handleCheckAll} disabled={checkingAll}>
+            {checkingAll ? 'Checking All...' : '🔄 Check All Prices'}
           </button>
-          <button className="btn" onClick={() => setIsLogsModalOpen(true)}>
+          <button className="btn btn-secondary" onClick={() => setShowLogsModal(true)}>
             📋 Logs
           </button>
-          <button className="btn" onClick={() => setIsSettingsModalOpen(true)}>
+          <button className="btn btn-secondary" onClick={() => setShowSettingsModal(true)}>
             ⚙️ Settings
           </button>
-          <button className="btn btn-primary" onClick={() => setIsAddModalOpen(true)}>
+          <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
             + Add Flight
           </button>
         </div>
       </header>
 
-      {/* Burner Email Banner */}
-      {burnerEmail && (
-        <div style={{ background: '#f3f3ee', border: '2px solid #1a1a1a', padding: '0.75rem 1rem', borderRadius: '2px', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', fontFamily: 'var(--font-mono)' }}>
-          <div>
-            <span style={{ fontWeight: 700 }}>📬 YOUR DEDICATED BURNER EMAIL: </span>
-            <code style={{ background: 'white', padding: '0.2rem 0.5rem', border: '1px solid #1a1a1a', fontWeight: 700, color: '#d92b2b' }}>
-              {burnerEmail}
-            </code>
-          </div>
-          <span style={{ fontSize: '0.75rem', color: '#555' }}>
-            Forward any Delta email receipt to this address to auto-track!
-          </span>
-        </div>
-      )}
-
-      {/* Flat Summary Stats Strip */}
-      <div className="stats-strip">
-        <div className="stat-item">
+      {/* Summary Cards */}
+      <div className="grid grid-4" style={{ marginBottom: '2rem' }}>
+        <div className="card stat-card">
           <div className="stat-label">Potential Cash Savings</div>
-          <div className="stat-value" style={{ color: totalCashSavings > 0 ? '#15803d' : 'inherit' }}>
-            ${totalCashSavings.toFixed(2)}
-          </div>
+          <div className="stat-value text-green">${totalCashSavings.toFixed(2)}</div>
         </div>
 
-        <div className="stat-item">
+        <div className="card stat-card">
           <div className="stat-label">SkyMiles Award Savings</div>
-          <div className="stat-value" style={{ color: totalMilesSavings > 0 ? '#7c3aed' : 'inherit' }}>
-            {totalMilesSavings.toLocaleString()} Mi
-          </div>
+          <div className="stat-value text-purple">{totalMilesSavings.toLocaleString()} Mi</div>
         </div>
 
-        <div className="stat-item">
+        <div className="card stat-card">
           <div className="stat-label">Tracked Reservations</div>
-          <div className="stat-value">{activeTrackingCount}</div>
+          <div className="stat-value">{flights.length}</div>
         </div>
 
-        <div className="stat-item">
+        <div className="card stat-card">
           <div className="stat-label">Daily Auto Check</div>
-          <div className="stat-value" style={{ fontSize: '1.1rem', marginTop: '0.4rem' }}>
-            9:00 AM
-          </div>
+          <div className="stat-value">9:00 AM</div>
         </div>
       </div>
 
-      {/* Main Flights Section */}
-      <main>
-        <div className="section-title">
-          <span>TRACKED RESERVATIONS ({flights.length})</span>
-          <span style={{ fontSize: '0.8rem', fontWeight: 400, color: '#666' }}>
+      {/* Tracked Flights Section */}
+      <section>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h2>Tracked Reservations ({flights.length})</h2>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: '#666' }}>
             Main Cabin cash & award tickets allow fee-free rebooking
           </span>
         </div>
 
-        {flights.length === 0 && !loading ? (
-          <div className="empty-box">
-            <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>✈️</div>
-            <h3 style={{ marginBottom: '0.5rem' }}>No Tracked Flights Yet</h3>
-            <p style={{ color: '#666', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-              Forward a Delta receipt to <code style={{ fontWeight: 700 }}>{burnerEmail}</code> or enter your Confirmation Code (PNR) to start.
+        {loading ? (
+          <div style={{ padding: '2rem', textAlign: 'center', fontFamily: 'var(--font-mono)' }}>
+            Loading active reservations...
+          </div>
+        ) : flights.length === 0 ? (
+          <div className="card" style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+            <h3 style={{ margin: '0 0 0.5rem 0' }}>No flights currently tracked</h3>
+            <p style={{ margin: '0 0 1.5rem 0', fontFamily: 'var(--font-mono)', color: '#666' }}>
+              Click "Paste Receipt" to import a confirmation email, or manually add your flight.
             </p>
-            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
-              <button className="btn" onClick={() => setIsImportModalOpen(true)}>
-                ✉️ Paste Receipt Email
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+              <button className="btn btn-secondary" onClick={() => setShowReceiptModal(true)}>
+                ✉️ Paste Receipt
               </button>
-              <button className="btn btn-primary" onClick={() => setIsAddModalOpen(true)}>
+              <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
                 + Add Flight Manually
               </button>
             </div>
           </div>
         ) : (
-          <div className="flights-list">
-            {flights.map(flight => (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {flights.map((flight) => (
               <FlightCard
                 key={flight.id}
                 flight={flight}
                 onCheckPrice={handleCheckPrice}
-                onRebook={handleRebook}
                 onDelete={handleDeleteFlight}
                 onToggleAutoRebook={handleToggleAutoRebook}
               />
             ))}
           </div>
         )}
-      </main>
+      </section>
 
       {/* Modals */}
-      <AddFlightModal
-        isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        onAddFlight={handleAddFlight}
-      />
+      {showAddModal && (
+        <AddFlightModal
+          onClose={() => setShowAddModal(false)}
+          onFlightAdded={() => {
+            setShowAddModal(false);
+            fetchFlights();
+          }}
+        />
+      )}
 
-      <ImportReceiptModal
-        isOpen={isImportModalOpen}
-        onClose={() => setIsImportModalOpen(false)}
-        onImportSuccess={fetchData}
-      />
+      {showReceiptModal && (
+        <ImportReceiptModal
+          onClose={() => setShowReceiptModal(false)}
+          onReceiptImported={() => {
+            setShowReceiptModal(false);
+            fetchFlights();
+          }}
+        />
+      )}
 
-      <SettingsModal
-        isOpen={isSettingsModalOpen}
-        onClose={() => setIsSettingsModalOpen(false)}
-        settings={settings}
-        onSaveSettings={handleSaveSettings}
-      />
+      {showSettingsModal && (
+        <SettingsModal onClose={() => setShowSettingsModal(false)} />
+      )}
 
-      <RebookLogsModal
-        isOpen={isLogsModalOpen}
-        onClose={() => setIsLogsModalOpen(false)}
-        logs={rebookLogs}
-      />
+      {showLogsModal && (
+        <RebookLogsModal onClose={() => setShowLogsModal(false)} />
+      )}
     </div>
   );
 }
